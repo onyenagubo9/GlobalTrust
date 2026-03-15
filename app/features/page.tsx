@@ -8,11 +8,12 @@ import Pricing from "@/components/landing/Pricing";
 import CTA from "@/components/landing/CTA";
 import Footer from "@/components/landing/Footer";
 import Faqs from "@/components/landing/Faqs";
-import Security from "@/components/landing/Security";
+import About from "@/components/landing/About";
 import Loader from "@/components/shared/Loader";
-import GlobalStats from "@/components/landing/GlobalStats";
+import FeaturesPage from "@/components/landing/Feature";
 
-export default function Page() {
+
+export default function AboutPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -59,13 +60,8 @@ export default function Page() {
       {/* ✅ Page Content */}
       <div className={loading ? "pointer-events-none select-none" : ""}>
         <Navbar />
-        <Hero />
-        <Features />
-        <GlobalStats />
-        <Pricing />
-        <Faqs />
-        <CTA />
-        <Security />
+        <FeaturesPage/>
+        
         <Footer />
       </div>
     </main>
