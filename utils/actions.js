@@ -14,14 +14,14 @@ async function sendWelcomeEmail(userData, accountNumber) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         to: userData.email,
-        subject: "🎉 Welcome to GlobalTrust Bank",
+        subject: "🎉 Welcome to FirstCBU Bank",
         html: `
           <div style="background-color:#f6f8fb;padding:40px 0;font-family:Arial,Helvetica,sans-serif;">
             <div style="max-width:600px;margin:auto;background:#ffffff;border-radius:10px;
               overflow:hidden;box-shadow:0 4px 8px rgba(0,0,0,0.05);">
               
               <div style="background:#0b8f60;color:#fff;text-align:center;padding:25px 0;">
-                <h1 style="margin:0;font-size:24px;">Welcome to GlobalTrust Bank 🎉</h1>
+                <h1 style="margin:0;font-size:24px;">Welcome to FirstCBU Bank 🎉</h1>
               </div>
               
               <div style="padding:30px;">
@@ -30,7 +30,7 @@ async function sendWelcomeEmail(userData, accountNumber) {
                 </p>
 
                 <p style="font-size:15px;color:#555;line-height:1.6;">
-                  We're excited to have you join <b>GlobalTrust Bank</b>! Your new account has been successfully created.
+                  We're excited to have you join <b>FirstCBU Bank</b>! Your new account has been successfully created.
                 </p>
 
                 <table style="width:100%;margin-top:20px;border-collapse:collapse;">
@@ -57,7 +57,7 @@ async function sendWelcomeEmail(userData, accountNumber) {
               </div>
 
               <div style="background:#f1f1f1;text-align:center;padding:15px;color:#666;font-size:13px;">
-                © ${new Date().getFullYear()} GlobalTrust Bank. All rights reserved.
+                © ${new Date().getFullYear()} FirstCBU Bank. All rights reserved.
               </div>
             </div>
           </div>
@@ -109,14 +109,26 @@ export async function registerUser(formData) {
       country,
       accountType,
       accountNumber,
+
+      // 🌍 Default currency
       currency: "USD",
-      balance: 0,
+
+      // 💱 NEW: Multi-currency balances
+      balances: {
+        USD: 0,
+        EUR: 0,
+        MYR: 0,
+        PHP: 0,
+        JPY: 0,
+        THB: 0,
+      },
+
       status: "Active",
-      avatar: "", // placeholder for later profile upload
+      avatar: "",
       createdAt: serverTimestamp(),
     };
 
-    // 4️⃣ Save user info to Firestore using UID as doc ID
+    // 4️⃣ Save user to Firestore
     await setDoc(doc(db, "users", user.uid), userDetails);
 
     // 5️⃣ Send welcome email
@@ -124,6 +136,7 @@ export async function registerUser(formData) {
 
     console.log("✅ User registered successfully!");
     return { success: true, message: "Account created successfully!", user };
+
   } catch (error) {
     console.error("❌ Registration error:", error);
     return { success: false, message: error.message };
