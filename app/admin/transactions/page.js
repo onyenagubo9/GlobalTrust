@@ -4,340 +4,318 @@ import { useEffect, useState } from "react";
 import { db } from "@/lib/firebaseClient";
 import {
   collection,
-  getDocs,
   deleteDoc,
   doc,
   query,
   orderBy,
+  onSnapshot,
+  updateDoc,
+  Timestamp,
 } from "firebase/firestore";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Loader2,
-  Trash2,
   Search,
-  Filter,
   Activity,
   ArrowUpRight,
   ArrowDownLeft,
   CreditCard,
-  Wallet,
   X,
-  Info,
-  Download,
-  FileSpreadsheet,
 } from "lucide-react";
-import jsPDF from "jspdf";
-import "jspdf-autotable";
 
 export default function AdminTransactions() {
   const [transactions, setTransactions] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filterType, setFilterType] = useState("All");
   const [search, setSearch] = useState("");
   const [selectedTx, setSelectedTx] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [editData, setEditData] = useState({});
+
   const itemsPerPage = 8;
 
-  useEffect(() => {
-    fetchTransactions();
-  }, []);
+  // 🎨 STATUS COLOR HELPER
+  const getStatusStyle = (status) => {
+    switch (status) {
+      case "Successful":
+        return "bg-green-100 text-green-700 border-green-200";
+      case "Failed":
+        return "bg-red-100 text-red-700 border-red-200";
+      case "Pending":
+        return "bg-amber-100 text-amber-700 border-amber-200";
+      default:
+        return "bg-gray-100 text-gray-700 border-gray-200";
+    }
+  };
 
-  const fetchTransactions = async () => {
-    try {
-      const q = query(collection(db, "transactions"), orderBy("timestamp", "desc"));
-      const snap = await getDocs(q);
+  // 🔥 REALTIME FETCH
+  useEffect(() => {
+    const q = query(collection(db, "transactions"), orderBy("timestamp", "desc"));
+    const unsubscribe = onSnapshot(q, (snap) => {
       const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       setTransactions(data);
       setFiltered(data);
-    } catch (error) {
-      console.error("Error loading transactions:", error);
-    } finally {
       setLoading(false);
-    }
-  };
+    });
+    return () => unsubscribe();
+  }, []);
 
-  // Filter + Search logic
+  // 🔍 SEARCH LOGIC
   useEffect(() => {
-    let filteredList = transactions;
-
-    if (filterType !== "All") {
-      filteredList = filteredList.filter((tx) => tx.type === filterType);
-    }
-
-    if (search.trim()) {
-      const s = search.toLowerCase();
-      filteredList = filteredList.filter(
-        (tx) =>
-          tx.to?.toLowerCase().includes(s) ||
-          tx.from?.toLowerCase().includes(s) ||
-          tx.accountNumber?.toLowerCase().includes(s)
-      );
-    }
-
+    const safe = (val) => (val || "").toString().toLowerCase();
+    const filteredList = transactions.filter((tx) =>
+      safe(tx.from).includes(search.toLowerCase()) ||
+      safe(tx.to).includes(search.toLowerCase()) ||
+      safe(tx.accountNumber).includes(search.toLowerCase())
+    );
     setFiltered(filteredList);
-    setCurrentPage(1);
-  }, [filterType, search, transactions]);
+    setCurrentPage(1); // Reset to page 1 on search
+  }, [search, transactions]);
 
+  // ❌ DELETE LOGIC
   const handleDelete = async (id) => {
-    if (!confirm("Are you sure you want to delete this transaction?")) return;
-    await deleteDoc(doc(db, "transactions", id));
-    setTransactions(transactions.filter((t) => t.id !== id));
-    setSelectedTx(null);
+    if (!confirm("Are you sure you want to permanently delete this transaction?")) return;
+    try {
+      await deleteDoc(doc(db, "transactions", id));
+      setSelectedTx(null);
+    } catch (err) {
+      alert("Error deleting: " + err.message);
+    }
   };
 
-  // Pagination logic
+  // ✅ SAVE / UPDATE LOGIC
+  const handleUpdate = async () => {
+    try {
+      const ref = doc(db, "transactions", selectedTx.id);
+
+      // Construct payload to ensure data types are correct
+      const payload = {
+        amount: Number(editData.amount) || 0,
+        status: editData.status || "Pending",
+        type: editData.type || "Deposit",
+        accountNumber: editData.accountNumber || "",
+        note: editData.note || "",
+        // Convert datetime-local string back to Firestore Timestamp
+        timestamp: editData.timestamp 
+          ? Timestamp.fromDate(new Date(editData.timestamp)) 
+          : selectedTx.timestamp,
+        updatedAt: Timestamp.now(), // Audit trail for admin edits
+      };
+
+      await updateDoc(ref, payload);
+      alert("Transaction updated successfully ✅");
+      setIsEditing(false);
+      setSelectedTx(null);
+    } catch (err) {
+      console.error("Update Error:", err);
+      alert("Failed to update: " + err.message);
+    }
+  };
+
+  // 📄 PAGINATION
   const startIndex = (currentPage - 1) * itemsPerPage;
   const currentItems = filtered.slice(startIndex, startIndex + itemsPerPage);
   const totalPages = Math.ceil(filtered.length / itemsPerPage);
 
-  const exportCSV = () => {
-    const csvRows = [
-      ["User", "Type", "Amount", "Account Number", "Status", "Date"],
-      ...filtered.map((tx) => [
-        tx.from || tx.to || "Unknown",
-        tx.type,
-        `$${tx.amount?.toLocaleString() || 0}`,
-        tx.accountNumber || "—",
-        tx.status || "Pending",
-        tx.timestamp?.toDate ? tx.timestamp.toDate().toLocaleString() : "—",
-      ]),
-    ];
-
-    const csvContent = csvRows.map((row) => row.join(",")).join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", "transactions.csv");
-    link.click();
-  };
-
-  const exportPDF = () => {
-    const docPDF = new jsPDF();
-    docPDF.text("Transactions Report", 14, 15);
-    const tableData = filtered.map((tx) => [
-      tx.from || tx.to || "Unknown",
-      tx.type,
-      `$${tx.amount?.toLocaleString() || 0}`,
-      tx.accountNumber || "—",
-      tx.status || "Pending",
-      tx.timestamp?.toDate ? tx.timestamp.toDate().toLocaleString() : "—",
-    ]);
-
-    docPDF.autoTable({
-      head: [["User", "Type", "Amount", "Account", "Status", "Date"]],
-      body: tableData,
-      startY: 25,
-    });
-
-    docPDF.save("transactions.pdf");
-  };
-
   if (loading)
     return (
-      <div className="flex justify-center items-center py-20">
-        <Loader2 className="w-6 h-6 text-green-600 animate-spin" />
+      <div className="flex flex-col items-center justify-center py-40 gap-4">
+        <Loader2 className="animate-spin text-green-600 w-10 h-10" />
+        <p className="text-gray-500 font-medium">Loading ledger...</p>
       </div>
     );
 
   return (
-    <main className="relative pb-20">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-          <Activity className="w-6 h-6 text-green-600" />
-          Transactions Management
+    <main className="max-w-7xl mx-auto p-6 bg-white min-h-screen">
+      {/* HEADER */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
+        <h1 className="text-2xl font-bold flex items-center gap-2 text-gray-800">
+          <Activity className="text-green-600" />
+          Transaction Management
         </h1>
 
-        <div className="flex space-x-2 mt-3 sm:mt-0">
-          <button
-            onClick={exportCSV}
-            className="flex items-center px-3 py-2 text-sm border rounded-lg hover:bg-gray-50"
-          >
-            <FileSpreadsheet className="w-4 h-4 mr-1 text-green-600" />
-            Export CSV
-          </button>
-          <button
-            onClick={exportPDF}
-            className="flex items-center px-3 py-2 text-sm border rounded-lg hover:bg-gray-50"
-          >
-            <Download className="w-4 h-4 mr-1 text-green-600" />
-            Export PDF
-          </button>
-        </div>
-      </div>
-
-      {/* Search & Filter */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-3">
-        <div className="flex items-center bg-white border border-gray-200 rounded-lg px-3 py-2 w-full sm:w-1/3 shadow-sm">
-          <Search className="w-4 h-4 text-gray-500 mr-2" />
+        <div className="relative w-full md:w-80">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
-            type="text"
-            placeholder="Search by name or account..."
-            className="flex-1 outline-none text-sm"
+            placeholder="Search accounts or users..."
+            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 outline-none transition-all"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-
-        <div className="flex items-center space-x-2">
-          <Filter className="w-4 h-4 text-gray-500" />
-          <select
-            value={filterType}
-            onChange={(e) => setFilterType(e.target.value)}
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-green-500 outline-none"
-          >
-            <option>All</option>
-            <option>Deposit</option>
-            <option>Transfer - Outgoing</option>
-            <option>Transfer - Incoming</option>
-            <option>Card Purchase</option>
-            <option>Card Payment</option>
-          </select>
-        </div>
       </div>
 
-      {/* Table */}
-      <div className="overflow-x-auto border border-gray-100 rounded-xl bg-white shadow-sm">
-        <table className="min-w-full text-sm">
-          <thead className="bg-green-600 text-white text-xs uppercase">
+      {/* TABLE */}
+      <div className="border border-gray-100 rounded-2xl shadow-sm overflow-x-auto">
+        <table className="w-full text-sm text-left">
+          <thead className="bg-gray-50 text-gray-500 font-semibold uppercase text-[11px] tracking-wider">
             <tr>
-              <th className="py-3 px-4 text-left">User</th>
-              <th className="py-3 px-4 text-left">Type</th>
-              <th className="py-3 px-4 text-left">Amount</th>
-              <th className="py-3 px-4 text-left">Account</th>
-              <th className="py-3 px-4 text-left">Status</th>
-              <th className="py-3 px-4 text-left">Date</th>
-              <th className="py-3 px-4 text-center">Action</th>
+              <th className="p-4">User/Account</th>
+              <th className="p-4">Type</th>
+              <th className="p-4">Amount</th>
+              <th className="p-4">Status</th>
+              <th className="p-4">Date</th>
             </tr>
           </thead>
-          <tbody>
-            {currentItems.length === 0 ? (
-              <tr>
-                <td colSpan="8" className="text-center py-6 text-gray-500">
-                  No transactions found.
+          <tbody className="divide-y divide-gray-100">
+            {currentItems.map((tx) => (
+              <tr
+                key={tx.id}
+                className="hover:bg-green-50/40 transition-colors cursor-pointer group"
+                onClick={() => {
+                  setSelectedTx(tx);
+                  setEditData({
+                    ...tx,
+                    timestamp: tx.timestamp?.toDate
+                      ? tx.timestamp.toDate().toISOString().slice(0, 16)
+                      : "",
+                  });
+                  setIsEditing(false);
+                }}
+              >
+                <td className="p-4">
+                  <div className="font-semibold text-gray-900">{tx.from || tx.to}</div>
+                  <div className="text-xs text-gray-500">{tx.accountNumber}</div>
+                </td>
+                <td className="p-4">
+                  <span className="flex items-center gap-2">
+                    {tx.type === "Deposit" ? (
+                      <ArrowDownLeft className="text-green-600 w-4 h-4" />
+                    ) : (
+                      <ArrowUpRight className="text-red-500 w-4 h-4" />
+                    )}
+                    {tx.type}
+                  </span>
+                </td>
+                <td className={`p-4 font-bold ${tx.type === "Debit" ? "text-red-600" : "text-green-600"}`}>
+                   {tx.amount?.toLocaleString()} {tx.currency || "USD"}
+                </td>
+                <td className="p-4">
+                  <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${getStatusStyle(tx.status)}`}>
+                    {tx.status}
+                  </span>
+                </td>
+                <td className="p-4 text-gray-500">
+                  {tx.timestamp?.toDate ? tx.timestamp.toDate().toLocaleDateString() : "—"}
                 </td>
               </tr>
-            ) : (
-              currentItems.map((tx) => (
-                <tr
-                  key={tx.id}
-                  className="border-b border-gray-100 hover:bg-gray-50 text-gray-700 cursor-pointer"
-                  onClick={() => setSelectedTx(tx)}
-                >
-                  <td className="py-3 px-4">{tx.from || tx.to || "Unknown"}</td>
-                  <td className="py-3 px-4 flex items-center space-x-2">
-                    {tx.type?.includes("Deposit") ? (
-                      <ArrowDownLeft className="w-4 h-4 text-green-600" />
-                    ) : tx.type?.includes("Transfer") ? (
-                      <ArrowUpRight className="w-4 h-4 text-red-500" />
-                    ) : tx.type?.includes("Card") ? (
-                      <CreditCard className="w-4 h-4 text-indigo-500" />
-                    ) : (
-                      <Wallet className="w-4 h-4 text-gray-500" />
-                    )}
-                    <span>{tx.type}</span>
-                  </td>
-                  <td className="py-3 px-4 font-semibold">
-                    ${tx.amount?.toLocaleString() || 0}
-                  </td>
-                  <td className="py-3 px-4">{tx.accountNumber || "—"}</td>
-                  <td
-                    className={`py-3 px-4 font-medium ${
-                      tx.status === "Successful"
-                        ? "text-green-600"
-                        : "text-yellow-600"
-                    }`}
-                  >
-                    {tx.status || "Pending"}
-                  </td>
-                  <td className="py-3 px-4 text-gray-500">
-                    {tx.timestamp?.toDate
-                      ? tx.timestamp.toDate().toLocaleString()
-                      : "—"}
-                  </td>
-                  <td className="py-3 px-4 text-center">
-                    <Info className="w-4 h-4 text-green-600 inline-block" />
-                  </td>
-                </tr>
-              ))
-            )}
+            ))}
           </tbody>
         </table>
       </div>
 
-      {/* Pagination */}
-      <div className="flex justify-center items-center mt-6 space-x-2">
-        {Array.from({ length: totalPages }, (_, i) => (
-          <button
-            key={i}
-            onClick={() => setCurrentPage(i + 1)}
-            className={`px-3 py-1 text-sm rounded-md border ${
-              currentPage === i + 1
-                ? "bg-green-600 text-white"
-                : "hover:bg-gray-100"
-            }`}
-          >
-            {i + 1}
-          </button>
-        ))}
-      </div>
+      {/* PAGINATION */}
+      {totalPages > 1 && (
+        <div className="flex justify-center mt-8 gap-1">
+          {Array.from({ length: totalPages }, (_, i) => (
+            <button
+              key={i}
+              onClick={() => setCurrentPage(i + 1)}
+              className={`w-8 h-8 flex items-center justify-center rounded-lg text-sm transition-all ${
+                currentPage === i + 1 ? "bg-green-600 text-white shadow-md" : "hover:bg-gray-100 text-gray-600"
+              }`}
+            >
+              {i + 1}
+            </button>
+          ))}
+        </div>
+      )}
 
-      {/* Transaction Details Modal */}
+      {/* EDIT MODAL */}
       <AnimatePresence>
         {selectedTx && (
           <motion.div
-            className="fixed inset-0 bg-black/50 flex justify-center items-center z-50"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex justify-center items-center p-4"
           >
             <motion.div
-              className="bg-white rounded-2xl shadow-lg w-[95%] max-w-md p-6 relative"
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
+              initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }}
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
             >
-              <button
-                onClick={() => setSelectedTx(null)}
-                className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
-              >
-                <X className="w-5 h-5" />
-              </button>
-
-              <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center">
-                <Activity className="w-5 h-5 text-green-600 mr-2" />
-                Transaction Details
-              </h2>
-
-              <div className="space-y-3 text-sm text-gray-700">
-                <p><strong>Type:</strong> {selectedTx.type}</p>
-                <p><strong>From:</strong> {selectedTx.from || "—"}</p>
-                <p><strong>To:</strong> {selectedTx.to || "—"}</p>
-                <p><strong>Account Number:</strong> {selectedTx.accountNumber || "—"}</p>
-                <p><strong>Amount:</strong> ${selectedTx.amount?.toLocaleString() || 0}</p>
-                <p><strong>Status:</strong> {selectedTx.status}</p>
-                <p><strong>Date:</strong> 
-                  {selectedTx.timestamp?.toDate ? selectedTx.timestamp.toDate().toLocaleString() : "—"}
-                </p>
-                <p><strong>Note:</strong> {selectedTx.note || "—"}</p>
+              <div className="p-6 border-b flex justify-between items-center bg-gray-50">
+                <h2 className="text-lg font-bold text-gray-800">Edit Transaction</h2>
+                <button onClick={() => setSelectedTx(null)} className="p-2 hover:bg-gray-200 rounded-full transition-colors">
+                  <X className="w-5 h-5 text-gray-500" />
+                </button>
               </div>
 
-              <div className="flex justify-end mt-6 space-x-2">
-                <motion.button
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => handleDelete(selectedTx.id)}
-                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
-                >
-                  <Trash2 className="w-4 h-4 inline mr-1" />
-                  Delete
-                </motion.button>
+              <div className="p-8 space-y-5">
+                <div>
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Amount</label>
+                  <input
+                    disabled={!isEditing}
+                    type="number"
+                    value={editData.amount || ""}
+                    onChange={(e) => setEditData({ ...editData, amount: e.target.value })}
+                    className="w-full mt-1 border border-gray-200 p-3 rounded-xl focus:ring-2 focus:ring-green-500 outline-none disabled:bg-gray-50"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Type</label>
+                    <select
+                      disabled={!isEditing}
+                      value={editData.type || ""}
+                      onChange={(e) => setEditData({ ...editData, type: e.target.value })}
+                      className="w-full mt-1 border border-gray-200 p-3 rounded-xl bg-white disabled:bg-gray-50"
+                    >
+                      <option value="Deposit">Deposit</option>
+                      <option value="Debit">Debit</option>
+                      <option value="Transfer">Transfer</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Status</label>
+                    <select
+                      disabled={!isEditing}
+                      value={editData.status || ""}
+                      onChange={(e) => setEditData({ ...editData, status: e.target.value })}
+                      className="w-full mt-1 border border-gray-200 p-3 rounded-xl bg-white disabled:bg-gray-50"
+                    >
+                      <option value="Pending">Pending</option>
+                      <option value="Successful">Successful</option>
+                      <option value="Failed">Failed</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Date & Time</label>
+                  <input
+                    type="datetime-local"
+                    disabled={!isEditing}
+                    value={editData.timestamp || ""}
+                    onChange={(e) => setEditData({ ...editData, timestamp: e.target.value })}
+                    className="w-full mt-1 border border-gray-200 p-3 rounded-xl disabled:bg-gray-50"
+                  />
+                </div>
+              </div>
+
+              <div className="p-6 bg-gray-50 flex items-center justify-between gap-4">
+                {isEditing ? (
+                  <button
+                    onClick={handleUpdate}
+                    className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-green-100"
+                  >
+                    Save Changes
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setIsEditing(true)}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-blue-100"
+                  >
+                    Edit Record
+                  </button>
+                )}
+                
                 <button
-                  onClick={() => setSelectedTx(null)}
-                  className="px-4 py-2 text-sm font-medium rounded-lg border border-gray-300"
+                  onClick={() => handleDelete(selectedTx.id)}
+                  className="px-4 py-3 text-red-500 hover:bg-red-50 rounded-xl transition-colors font-semibold"
                 >
-                  Close
+                  Delete
                 </button>
               </div>
             </motion.div>
