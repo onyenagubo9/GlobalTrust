@@ -35,8 +35,10 @@ export default function InternationalTransferPage() {
         const userRef = doc(db, "users", loggedUser.uid);
         const snap = await getDoc(userRef);
         if (snap.exists()) {
-          setUser({ id: loggedUser.uid, ...snap.data() });
-          setBalance(snap.data().accountBalance || 0);
+          const userData = snap.data();
+          setUser({ id: loggedUser.uid, ...userData });
+          // ✅ Read nested USD balance from balances object
+          setBalance(userData.balances?.USD ?? 0);
         }
       }
     });
@@ -76,9 +78,9 @@ export default function InternationalTransferPage() {
       const userRef = doc(db, "users", user.id);
       const newBalance = balance - transferAmount;
 
-      // Deduct balance
+      // ✅ Deduct nested balance using dot notation
       await updateDoc(userRef, {
-        accountBalance: newBalance,
+        "balances.USD": newBalance,
       });
 
       // Record transfer (pending for admin review)

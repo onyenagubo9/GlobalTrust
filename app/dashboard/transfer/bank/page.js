@@ -37,12 +37,13 @@ export default function BankTransferPage() {
 
   const router = useRouter();
 
-  // ✅ Listen to user & accountBalance in real-time
+  // ✅ Listen to user & USD balance in real-time
   useEffect(() => {
     let unsubscribeSnapshot = null;
 
     const unsubAuth = onAuthStateChanged(auth, async (loggedUser) => {
       setLoadingUser(true);
+
       if (!loggedUser) {
         setUser(null);
         setAccountBalance(0);
@@ -55,6 +56,7 @@ export default function BankTransferPage() {
           collection(db, "users"),
           where("email", "==", loggedUser.email)
         );
+
         const snap = await getDocs(usersQ);
 
         if (snap.empty) {
@@ -70,9 +72,16 @@ export default function BankTransferPage() {
         unsubscribeSnapshot = onSnapshot(userRef, (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
-            setUser({ id: docSnap.id, ...data });
-            setAccountBalance(data.accountBalance ?? 0);
+
+            setUser({
+              id: docSnap.id,
+              ...data,
+            });
+
+            // ✅ Read USD balance from balances object
+            setAccountBalance(data.balances?.USD ?? 0);
           }
+
           setLoadingUser(false);
         });
       } catch (err) {
@@ -87,9 +96,10 @@ export default function BankTransferPage() {
     };
   }, []);
 
-  // ✅ Handle transfer
+  // ✅ Handle Transfer
   const handleTransfer = async (e) => {
     e.preventDefault();
+
     setMessage("");
 
     if (!recipientAcc || !amount) {
@@ -98,6 +108,7 @@ export default function BankTransferPage() {
     }
 
     const transferAmount = parseFloat(amount);
+
     if (isNaN(transferAmount) || transferAmount <= 0) {
       setMessage("❌ Invalid transfer amount.");
       return;
@@ -121,10 +132,12 @@ export default function BankTransferPage() {
     setProcessing(true);
 
     try {
+      // ✅ Find recipient
       const recipientsQ = query(
         collection(db, "users"),
         where("accountNumber", "==", recipientAcc)
       );
+
       const recipientsSnap = await getDocs(recipientsQ);
 
       if (recipientsSnap.empty) {
@@ -145,60 +158,80 @@ export default function BankTransferPage() {
         const senderSnap = await transaction.get(senderRef);
         const recipientSnap = await transaction.get(recipientRef);
 
-        if (!senderSnap.exists()) throw new Error("Sender not found");
-        if (!recipientSnap.exists()) throw new Error("Recipient not found");
+        if (!senderSnap.exists()) {
+          throw new Error("Sender not found");
+        }
 
-        const senderBalance = senderSnap.data().accountBalance ?? 0;
-        const receiverBalance = recipientSnap.data().accountBalance ?? 0;
+        if (!recipientSnap.exists()) {
+          throw new Error("Recipient not found");
+        }
 
-        if (senderBalance < transferAmount) throw new Error("Insufficient funds");
+        // ✅ Read balances from nested balances object
+        const senderBalance =
+          senderSnap.data().balances?.USD ?? 0;
 
-        // Update both balances atomically
+        const receiverBalance =
+          recipientSnap.data().balances?.USD ?? 0;
+
+        if (senderBalance < transferAmount) {
+          throw new Error("Insufficient funds");
+        }
+
+        // ✅ Update nested USD balances
         transaction.update(senderRef, {
-          accountBalance: senderBalance - transferAmount,
+          "balances.USD": senderBalance - transferAmount,
         });
+
         transaction.update(recipientRef, {
-          accountBalance: receiverBalance + transferAmount,
+          "balances.USD": receiverBalance + transferAmount,
         });
       });
 
-      // ✅ Record both transactions
+      // ✅ Record outgoing transaction
       await addDoc(collection(db, "transactions"), {
         userId: user.id,
         type: "Transfer - Outgoing",
         to: recipientData.name ?? "Unknown User",
-        accountNumber: recipientData.accountNumber ?? recipientAcc,
+        accountNumber:
+          recipientData.accountNumber ?? recipientAcc,
         amount: transferAmount,
+        currency: "USD",
         note: note ?? "",
         status: "Successful",
         timestamp: serverTimestamp(),
       });
 
+      // ✅ Record incoming transaction
       await addDoc(collection(db, "transactions"), {
         userId: recipientId,
         type: "Transfer - Incoming",
         from: user.name ?? "Unknown Sender",
-        accountNumber: user.accountNumber ?? "Unknown",
+        accountNumber:
+          user.accountNumber ?? "Unknown",
         amount: transferAmount,
+        currency: "USD",
         note: note ?? "",
         status: "Successful",
         timestamp: serverTimestamp(),
       });
 
-      // ✅ Redirect to success page
+      // ✅ Redirect
       router.push(
         `/dashboard/transfer/success?amount=${transferAmount}&recipient=${encodeURIComponent(
           recipientData.name ?? "Unknown User"
-        )}&account=${recipientData.accountNumber ?? recipientAcc}`
+        )}&account=${
+          recipientData.accountNumber ?? recipientAcc
+        }`
       );
     } catch (err) {
       console.error("Transfer Error:", err);
+
       setMessage("❌ Transfer failed. Try again.");
       setProcessing(false);
     }
   };
 
-  // ✅ UI Rendering
+  // ✅ UI
   return (
     <main className="min-h-screen bg-gray-50 px-4 sm:px-8 md:px-16 py-8">
       <motion.div
@@ -213,27 +246,37 @@ export default function BankTransferPage() {
             href="/dashboard/transfer"
             className="flex items-center text-green-600 hover:text-green-700 text-sm font-medium"
           >
-            <ArrowLeft className="w-4 h-4 mr-2" /> Back
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back
           </Link>
+
           <div className="flex items-center space-x-2 text-green-700">
             <ShieldCheck className="w-4 h-4" />
-            <span className="text-sm">Secure Transfer</span>
+            <span className="text-sm">
+              Secure Transfer
+            </span>
           </div>
         </div>
 
         {/* Title */}
         <div className="flex items-center mb-6">
           <Banknote className="w-6 h-6 text-green-600 mr-2" />
-          <h1 className="text-2xl font-bold text-gray-800">Bank Transfer</h1>
+
+          <h1 className="text-2xl font-bold text-gray-800">
+            Bank Transfer
+          </h1>
         </div>
 
-        {/* Account Balance Card */}
+        {/* Balance Card */}
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           className="bg-linear-to-r from-green-600 to-emerald-500 text-white rounded-xl shadow p-5 mb-6"
         >
-          <p className="text-sm opacity-90">Available Balance</p>
+          <p className="text-sm opacity-90">
+            Available Balance
+          </p>
+
           <div className="flex items-end justify-between mt-1">
             <p className="text-3xl font-bold">
               {loadingUser ? (
@@ -242,6 +285,7 @@ export default function BankTransferPage() {
                 `$${Number(accountBalance).toLocaleString()}`
               )}
             </p>
+
             <CreditCard className="w-6 h-6 opacity-70" />
           </div>
         </motion.div>
@@ -251,23 +295,29 @@ export default function BankTransferPage() {
           onSubmit={handleTransfer}
           className="space-y-4 border-t border-gray-100 pt-4"
         >
+          {/* Recipient */}
           <div>
             <label className="block text-gray-600 font-medium mb-1">
               Recipient Account Number
             </label>
+
             <input
               type="text"
               value={recipientAcc}
-              onChange={(e) => setRecipientAcc(e.target.value)}
+              onChange={(e) =>
+                setRecipientAcc(e.target.value)
+              }
               placeholder="Enter recipient’s account number"
               className="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-600 outline-none transition"
             />
           </div>
 
+          {/* Amount */}
           <div>
             <label className="block text-gray-600 font-medium mb-1">
               Amount
             </label>
+
             <input
               type="number"
               step="0.01"
@@ -278,10 +328,12 @@ export default function BankTransferPage() {
             />
           </div>
 
+          {/* Note */}
           <div>
             <label className="block text-gray-600 font-medium mb-1">
               Note (optional)
             </label>
+
             <input
               type="text"
               value={note}
@@ -291,6 +343,7 @@ export default function BankTransferPage() {
             />
           </div>
 
+          {/* Button */}
           <motion.button
             whileTap={{ scale: 0.97 }}
             type="submit"
@@ -299,7 +352,8 @@ export default function BankTransferPage() {
           >
             {processing ? (
               <>
-                <Loader2 className="w-5 h-5 mr-2 animate-spin" /> Processing...
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                Processing...
               </>
             ) : (
               "Send Money"
