@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Menu, X } from "lucide-react";
+import { Menu, X, Phone } from "lucide-react";
 
 export default function Navbar() {
   const [open, setOpen] = useState(false);
@@ -43,7 +43,16 @@ export default function Navbar() {
           <Link href="/pricing" className="hover:text-green-600 transition">Pricing</Link>
           <Link href="/contact" className="hover:text-green-600 transition">Contact</Link>
 
-          <div className="flex items-center gap-2 ml-4">
+          {/* PHONE NUMBER (DESKTOP) */}
+          <a 
+            href="tel:+17253591155" 
+            className="flex items-center gap-1.5 text-gray-700 hover:text-green-600 transition ml-2"
+          >
+            <Phone size={16} className="text-green-600" />
+            <span>+1 (725) 359-1155</span>
+          </a>
+
+          <div className="flex items-center gap-2 ml-2">
             <Link
               href="/login"
               className="px-4 py-2 rounded-md border border-gray-200 hover:bg-gray-100"
@@ -78,6 +87,16 @@ export default function Navbar() {
             <Link href="/features" className="hover:text-green-600" onClick={() => setOpen(false)}>Features</Link>
             <Link href="/pricing" className="hover:text-green-600" onClick={() => setOpen(false)}>Pricing</Link>
             <Link href="/contact" className="hover:text-green-600" onClick={() => setOpen(false)}>Contact</Link>
+
+            {/* PHONE NUMBER (MOBILE) */}
+            <a 
+              href="tel:+17253591155" 
+              className="flex items-center gap-2 text-gray-700 hover:text-green-600 py-1"
+              onClick={() => setOpen(false)}
+            >
+              <Phone size={18} className="text-green-600" />
+              <span>+1 (725) 359-1155</span>
+            </a>
 
             <div className="border-t pt-3 mt-3 flex flex-col gap-2">
               <Link

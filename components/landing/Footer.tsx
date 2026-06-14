@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Facebook, Twitter, Instagram, Linkedin } from "lucide-react";
+import { Facebook, Twitter, Instagram, Linkedin, Phone } from "lucide-react";
 
 export default function Footer() {
   return (
@@ -28,6 +28,17 @@ export default function Footer() {
             Banking built for a digital world — simple, secure, and designed to
             help you grow your money with confidence.
           </p>
+
+          {/* Phone Contact */}
+          <div className="mt-4">
+            <a 
+              href="tel:+17253591155" 
+              className="inline-flex items-center gap-2 text-xs text-gray-700 hover:text-green-600 transition font-medium"
+            >
+              <Phone size={14} className="text-emerald-600" />
+              <span>+1 (725) 359-1155</span>
+            </a>
+          </div>
 
           {/* Social Links */}
           <div className="flex gap-4 mt-4">
