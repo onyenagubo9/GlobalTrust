@@ -12,9 +12,14 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// 1. Your updated metadata object with the icons property added
 export const metadata: Metadata = {
   title: "GlobalTrust Bank",
   description: "Send and Receive money globally",
+  icons: {
+    icon: "/globaltrust.jpg", // 👈 This sets your main tab icon (can be .ico, .png, or .svg)
+    // apple: "/apple-icon.png", // Optional: For iOS home screen shortcuts
+  },
 };
 
 export default function RootLayout({
