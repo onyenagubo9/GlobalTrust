@@ -67,6 +67,12 @@ export default function SettingsForm() {
       desc: "Manage your linked bank accounts",
       link: "/settings/bank-account",
     },
+     {
+      title: "Transaction Pin",
+      icon: <Lock className="w-5 h-5 text-blue-600" />,
+      desc: "Create Transaction Pin",
+      link: "/settings/create-pin",
+    },
     {
       title: "Account Limit",
       icon: <GaugeCircle className="w-5 h-5 text-orange-600" />,
