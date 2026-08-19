@@ -4,11 +4,13 @@ import { useEffect, useState } from "react";
 import { db } from "@/lib/firebaseClient";
 import {
   collection,
+  addDoc,
   deleteDoc,
   doc,
   query,
   orderBy,
   onSnapshot,
+  getDocs,
   updateDoc,
   Timestamp,
 } from "firebase/firestore";
@@ -19,7 +21,7 @@ import {
   Activity,
   ArrowUpRight,
   ArrowDownLeft,
-  CreditCard,
+  Plus,
   X,
 } from "lucide-react";
 
@@ -33,6 +35,24 @@ export default function AdminTransactions() {
 
   const [isEditing, setIsEditing] = useState(false);
   const [editData, setEditData] = useState({});
+
+  // 👥 USERS LIST FOR DROPDOWN
+  const [usersList, setUsersList] = useState([]);
+
+  // ➕ NEW TRANSACTION MODAL STATE
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [addData, setAddData] = useState({
+    userId: "",
+    from: "",
+    to: "",
+    accountNumber: "",
+    amount: "",
+    type: "Deposit",
+    status: "Successful",
+    currency: "USD",
+    note: "",
+    timestamp: new Date().toISOString().slice(0, 16),
+  });
 
   const itemsPerPage = 8;
 
@@ -50,7 +70,7 @@ export default function AdminTransactions() {
     }
   };
 
-  // 🔥 REALTIME FETCH
+  // 🔥 REALTIME TRANSACTIONS FETCH & USERS FETCH
   useEffect(() => {
     const q = query(collection(db, "transactions"), orderBy("timestamp", "desc"));
     const unsubscribe = onSnapshot(q, (snap) => {
@@ -59,8 +79,43 @@ export default function AdminTransactions() {
       setFiltered(data);
       setLoading(false);
     });
+
+    // Fetch users collection (assuming your collection is named "users")
+    const fetchUsers = async () => {
+      try {
+        const usersSnap = await getDocs(collection(db, "users"));
+        const users = usersSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setUsersList(users);
+      } catch (err) {
+        console.error("Error fetching users:", err);
+      }
+    };
+    fetchUsers();
+
     return () => unsubscribe();
   }, []);
+
+  // 👤 HANDLE USER SELECTION FROM DROPDOWN
+  const handleUserSelect = (e) => {
+    const selectedUserId = e.target.value;
+    const foundUser = usersList.find((u) => u.id === selectedUserId);
+
+    if (foundUser) {
+      setAddData({
+        ...addData,
+        userId: foundUser.id,
+        to: foundUser.fullName || foundUser.name || foundUser.email || "User",
+        accountNumber: foundUser.accountNumber || foundUser.accNum || "",
+      });
+    } else {
+      setAddData({
+        ...addData,
+        userId: "",
+        to: "",
+        accountNumber: "",
+      });
+    }
+  };
 
   // 🔍 SEARCH LOGIC
   useEffect(() => {
@@ -71,8 +126,49 @@ export default function AdminTransactions() {
       safe(tx.accountNumber).includes(search.toLowerCase())
     );
     setFiltered(filteredList);
-    setCurrentPage(1); // Reset to page 1 on search
+    setCurrentPage(1);
   }, [search, transactions]);
+
+  // ➕ CREATE LOGIC
+  const handleCreate = async (e) => {
+    e.preventDefault();
+    try {
+      const payload = {
+        userId: addData.userId || "",
+        from: addData.from || "Admin",
+        to: addData.to || "User",
+        accountNumber: addData.accountNumber || "",
+        amount: Number(addData.amount) || 0,
+        type: addData.type || "Deposit",
+        status: addData.status || "Successful",
+        currency: addData.currency || "USD",
+        note: addData.note || "",
+        timestamp: addData.timestamp
+          ? Timestamp.fromDate(new Date(addData.timestamp))
+          : Timestamp.now(),
+        createdAt: Timestamp.now(),
+      };
+
+      await addDoc(collection(db, "transactions"), payload);
+      alert("Transaction created successfully ✅");
+      setIsAddOpen(false);
+      setAddData({
+        userId: "",
+        from: "",
+        to: "",
+        accountNumber: "",
+        amount: "",
+        type: "Deposit",
+        status: "Successful",
+        currency: "USD",
+        note: "",
+        timestamp: new Date().toISOString().slice(0, 16),
+      });
+    } catch (err) {
+      console.error("Create Error:", err);
+      alert("Failed to create transaction: " + err.message);
+    }
+  };
 
   // ❌ DELETE LOGIC
   const handleDelete = async (id) => {
@@ -90,18 +186,18 @@ export default function AdminTransactions() {
     try {
       const ref = doc(db, "transactions", selectedTx.id);
 
-      // Construct payload to ensure data types are correct
       const payload = {
         amount: Number(editData.amount) || 0,
         status: editData.status || "Pending",
         type: editData.type || "Deposit",
         accountNumber: editData.accountNumber || "",
+        from: editData.from || "",
+        to: editData.to || "",
         note: editData.note || "",
-        // Convert datetime-local string back to Firestore Timestamp
         timestamp: editData.timestamp 
           ? Timestamp.fromDate(new Date(editData.timestamp)) 
           : selectedTx.timestamp,
-        updatedAt: Timestamp.now(), // Audit trail for admin edits
+        updatedAt: Timestamp.now(),
       };
 
       await updateDoc(ref, payload);
@@ -136,14 +232,24 @@ export default function AdminTransactions() {
           Transaction Management
         </h1>
 
-        <div className="relative w-full md:w-80">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            placeholder="Search accounts or users..."
-            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 outline-none transition-all"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+        <div className="flex items-center gap-3 w-full md:w-auto">
+          <div className="relative w-full md:w-80">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              placeholder="Search accounts or users..."
+              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 outline-none transition-all"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          
+          <button
+            onClick={() => setIsAddOpen(true)}
+            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl font-semibold shadow-md shadow-green-100 transition-all shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            Add Transaction
+          </button>
         </div>
       </div>
 
@@ -223,6 +329,169 @@ export default function AdminTransactions() {
         </div>
       )}
 
+      {/* ADD TRANSACTION MODAL WITH USER PICKER */}
+      <AnimatePresence>
+        {isAddOpen && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex justify-center items-center p-4 overflow-y-auto"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }}
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden my-8"
+            >
+              <div className="p-6 border-b flex justify-between items-center bg-gray-50">
+                <h2 className="text-lg font-bold text-gray-800">Add Transaction to User</h2>
+                <button onClick={() => setIsAddOpen(false)} className="p-2 hover:bg-gray-200 rounded-full transition-colors">
+                  <X className="w-5 h-5 text-gray-500" />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreate} className="p-6 space-y-4">
+                {/* SELECT USER FROM FIREBASE USERS COLLECTION */}
+                <div>
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Select User</label>
+                  <select
+                    required
+                    value={addData.userId}
+                    onChange={handleUserSelect}
+                    className="w-full mt-1 border border-gray-200 p-3 rounded-xl bg-white text-sm focus:ring-2 focus:ring-green-500 outline-none"
+                  >
+                    <option value="">-- Choose a user --</option>
+                    {usersList.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.fullName || user.name || user.email} ({user.accountNumber || user.accNum || "No Account #"})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Target User Name</label>
+                    <input
+                      type="text"
+                      readOnly
+                      value={addData.to}
+                      placeholder="Auto-filled from user selection"
+                      className="w-full mt-1 border border-gray-200 p-3 rounded-xl bg-gray-50 text-sm outline-none text-gray-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Account Number</label>
+                    <input
+                      type="text"
+                      readOnly
+                      value={addData.accountNumber}
+                      placeholder="Auto-filled"
+                      className="w-full mt-1 border border-gray-200 p-3 rounded-xl bg-gray-50 text-sm outline-none text-gray-600"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Sender / Source (From)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. System / Bank Wire / External Source"
+                    value={addData.from}
+                    onChange={(e) => setAddData({ ...addData, from: e.target.value })}
+                    className="w-full mt-1 border border-gray-200 p-3 rounded-xl outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Amount</label>
+                    <input
+                      type="number"
+                      required
+                      placeholder="0.00"
+                      value={addData.amount}
+                      onChange={(e) => setAddData({ ...addData, amount: e.target.value })}
+                      className="w-full mt-1 border border-gray-200 p-3 rounded-xl outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Currency</label>
+                    <input
+                      type="text"
+                      value={addData.currency}
+                      onChange={(e) => setAddData({ ...addData, currency: e.target.value })}
+                      className="w-full mt-1 border border-gray-200 p-3 rounded-xl outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Type</label>
+                    <select
+                      value={addData.type}
+                      onChange={(e) => setAddData({ ...addData, type: e.target.value })}
+                      className="w-full mt-1 border border-gray-200 p-3 rounded-xl bg-white text-sm"
+                    >
+                      <option value="Deposit">Deposit</option>
+                      <option value="Debit">Debit</option>
+                      <option value="Transfer">Transfer</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Status</label>
+                    <select
+                      value={addData.status}
+                      onChange={(e) => setAddData({ ...addData, status: e.target.value })}
+                      className="w-full mt-1 border border-gray-200 p-3 rounded-xl bg-white text-sm"
+                    >
+                      <option value="Successful">Successful</option>
+                      <option value="Pending">Pending</option>
+                      <option value="Failed">Failed</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Date & Time</label>
+                  <input
+                    type="datetime-local"
+                    value={addData.timestamp}
+                    onChange={(e) => setAddData({ ...addData, timestamp: e.target.value })}
+                    className="w-full mt-1 border border-gray-200 p-3 rounded-xl text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Note / Description</label>
+                  <input
+                    type="text"
+                    placeholder="Optional transaction remarks"
+                    value={addData.note}
+                    onChange={(e) => setAddData({ ...addData, note: e.target.value })}
+                    className="w-full mt-1 border border-gray-200 p-3 rounded-xl outline-none focus:ring-2 focus:ring-green-500 text-sm"
+                  />
+                </div>
+
+                <div className="pt-4 flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddOpen(false)}
+                    className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 rounded-xl transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-green-100"
+                  >
+                    Create Transaction
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* EDIT MODAL */}
       <AnimatePresence>
         {selectedTx && (
@@ -242,6 +511,17 @@ export default function AdminTransactions() {
               </div>
 
               <div className="p-8 space-y-5">
+                <div>
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Account Number</label>
+                  <input
+                    disabled={!isEditing}
+                    type="text"
+                    value={editData.accountNumber || ""}
+                    onChange={(e) => setEditData({ ...editData, accountNumber: e.target.value })}
+                    className="w-full mt-1 border border-gray-200 p-3 rounded-xl focus:ring-2 focus:ring-green-500 outline-none disabled:bg-gray-50"
+                  />
+                </div>
+
                 <div>
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Amount</label>
                   <input
