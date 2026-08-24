@@ -64,9 +64,16 @@ export default function TransactionHistoryPage() {
     };
   }, []);
 
+  // 🎨 ROBUST CHECKER FOR MONEY OUT (Debits & Outgoing Transfers)
+  const isMoneyOut = (type) => {
+    const safeType = (type || "").toLowerCase();
+    return safeType.includes("debit") || safeType.includes("outgoing");
+  };
+
   const filteredTransactions = transactions.filter((tx) => {
-    if (filter === "Incoming") return tx.type.includes("Incoming");
-    if (filter === "Outgoing") return tx.type.includes("Outgoing");
+    const out = isMoneyOut(tx.type);
+    if (filter === "Incoming") return !out;
+    if (filter === "Outgoing") return out;
     return true;
   });
 
@@ -80,7 +87,6 @@ export default function TransactionHistoryPage() {
       const bg = style.backgroundColor;
       const color = style.color;
 
-      // Replace unsupported oklch colors
       if (bg && bg.includes("oklch")) el.style.backgroundColor = "#ffffff";
       if (color && color.includes("oklch")) el.style.color = "#000000";
     });
@@ -99,22 +105,18 @@ export default function TransactionHistoryPage() {
     const imageWidth = pageWidth - 60;
     const imageHeight = (canvas.height * imageWidth) / canvas.width;
 
-    // Add bank-style header
-    pdf.setFillColor(16, 185, 129); // Green bar
+    pdf.setFillColor(16, 185, 129);
     pdf.rect(0, 0, pageWidth, 60, "F");
     pdf.setTextColor("#ffffff");
     pdf.setFontSize(16);
     pdf.text("Firstcbu Bank - Transaction Receipt", 40, 38);
 
-    // Add logo watermark
     const watermark = new Image();
     watermark.src = "/honstinger-logo.png";
     pdf.addImage(watermark, "PNG", pageWidth / 2 - 50, 300, 100, 100, "", "FAST");
 
-    // Add the transaction image snapshot
     pdf.addImage(imgData, "PNG", 30, 80, imageWidth, imageHeight);
 
-    // Add signature section
     pdf.setFontSize(12);
     pdf.setTextColor("#444");
     pdf.text("Authorized Signature: ____________________", 40, 780);
@@ -177,62 +179,61 @@ export default function TransactionHistoryPage() {
           </p>
         ) : (
           <div className="space-y-4">
-            {filteredTransactions.map((tx, index) => (
-              <motion.div
-                key={tx.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.05 }}
-                onClick={() => setSelectedTransaction(tx)}
-                className={`flex justify-between items-center p-4 rounded-xl border shadow-sm cursor-pointer transition ${
-                  tx.type.includes("Outgoing")
-                    ? "border-red-100 bg-red-50 hover:bg-red-100"
-                    : "border-green-100 bg-green-50 hover:bg-green-100"
-                }`}
-              >
-                <div className="flex items-center space-x-3">
-                  <div
-                    className={`p-2 rounded-full ${
-                      tx.type.includes("Outgoing")
-                        ? "bg-red-100 text-red-600"
-                        : "bg-green-100 text-green-600"
-                    }`}
-                  >
-                    {tx.type.includes("Outgoing") ? (
-                      <ArrowUpRight className="w-5 h-5" />
-                    ) : (
-                      <ArrowDownLeft className="w-5 h-5" />
-                    )}
+            {filteredTransactions.map((tx, index) => {
+              const out = isMoneyOut(tx.type);
+              return (
+                <motion.div
+                  key={tx.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                  onClick={() => setSelectedTransaction(tx)}
+                  className={`flex justify-between items-center p-4 rounded-xl border shadow-sm cursor-pointer transition ${
+                    out
+                      ? "border-red-100 bg-red-50 hover:bg-red-100"
+                      : "border-green-100 bg-green-50 hover:bg-green-100"
+                  }`}
+                >
+                  <div className="flex items-center space-x-3">
+                    <div
+                      className={`p-2 rounded-full ${
+                        out ? "bg-red-100 text-red-600" : "bg-green-100 text-green-600"
+                      }`}
+                    >
+                      {out ? (
+                        <ArrowUpRight className="w-5 h-5" />
+                      ) : (
+                        <ArrowDownLeft className="w-5 h-5" />
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-gray-800 font-semibold">
+                        {out
+                          ? `Sent to ${tx.to || "Unknown"}`
+                          : `Received from ${tx.from || "Unknown"}`}
+                      </p>
+                      <p className="text-xs text-gray-500">{tx.note || "No note"}</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {tx.timestamp
+                          ? new Date(tx.timestamp.seconds * 1000).toLocaleString()
+                          : "Pending..."}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-gray-800 font-semibold">
-                      {tx.type.includes("Outgoing")
-                        ? `Sent to ${tx.to || "Unknown"}`
-                        : `Received from ${tx.from || "Unknown"}`}
+                  <div className="text-right">
+                    <p
+                      className={`text-lg font-bold ${
+                        out ? "text-red-600" : "text-green-600"
+                      }`}
+                    >
+                      {out ? "-" : "+"}${" "}
+                      {Number(tx.amount).toLocaleString()}
                     </p>
-                    <p className="text-xs text-gray-500">{tx.note || "No note"}</p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      {tx.timestamp
-                        ? new Date(tx.timestamp.seconds * 1000).toLocaleString()
-                        : "Pending..."}
-                    </p>
+                    <p className="text-xs text-gray-500">{tx.status}</p>
                   </div>
-                </div>
-                <div className="text-right">
-                  <p
-                    className={`text-lg font-bold ${
-                      tx.type.includes("Outgoing")
-                        ? "text-red-600"
-                        : "text-green-600"
-                    }`}
-                  >
-                    {tx.type.includes("Outgoing") ? "-" : "+"}${" "}
-                    {Number(tx.amount).toLocaleString()}
-                  </p>
-                  <p className="text-xs text-gray-500">{tx.status}</p>
-                </div>
-              </motion.div>
-            ))}
+                </motion.div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -264,21 +265,21 @@ export default function TransactionHistoryPage() {
               {/* Header */}
               <div className="text-center mb-4">
                 <img
-                  src="/honstinger-logo.png"
+                  src="/globaltrust.jpg"
                   alt="Honstinger Logo"
                   className="w-12 h-12 mx-auto mb-2"
                 />
                 <h2 className="text-lg font-bold text-gray-800">
                   Transaction Receipt
                 </h2>
-                <p className="text-sm text-gray-500">FirstCBU Bank</p>
+                <p className="text-sm text-gray-500">Global Trust Bank</p>
               </div>
 
               {/* Details */}
               <div className="space-y-2 text-sm border-t pt-3 border-gray-200">
                 <p><strong>Type:</strong> {selectedTransaction.type}</p>
                 <p><strong>Amount:</strong> ${Number(selectedTransaction.amount).toLocaleString()}</p>
-                {selectedTransaction.type.includes("Outgoing") ? (
+                {isMoneyOut(selectedTransaction.type) ? (
                   <p><strong>To:</strong> {selectedTransaction.to || "Unknown"}</p>
                 ) : (
                   <p><strong>From:</strong> {selectedTransaction.from || "Unknown"}</p>

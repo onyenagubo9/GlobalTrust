@@ -70,6 +70,15 @@ export default function AdminTransactions() {
     }
   };
 
+  // 🎨 ROBUST TRANSACTION TYPE HELPER (Catches variants like "Debit", "Outgoing Transfer", etc.)
+  const isMoneyIn = (type) => {
+    const safeType = (type || "").toLowerCase();
+    if (safeType.includes("debit") || safeType.includes("outgoing")) {
+      return false;
+    }
+    return true;
+  };
+
   // 🔥 REALTIME TRANSACTIONS FETCH & USERS FETCH
   useEffect(() => {
     const q = query(collection(db, "transactions"), orderBy("timestamp", "desc"));
@@ -80,7 +89,6 @@ export default function AdminTransactions() {
       setLoading(false);
     });
 
-    // Fetch users collection (assuming your collection is named "users")
     const fetchUsers = async () => {
       try {
         const usersSnap = await getDocs(collection(db, "users"));
@@ -266,48 +274,51 @@ export default function AdminTransactions() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {currentItems.map((tx) => (
-              <tr
-                key={tx.id}
-                className="hover:bg-green-50/40 transition-colors cursor-pointer group"
-                onClick={() => {
-                  setSelectedTx(tx);
-                  setEditData({
-                    ...tx,
-                    timestamp: tx.timestamp?.toDate
-                      ? tx.timestamp.toDate().toISOString().slice(0, 16)
-                      : "",
-                  });
-                  setIsEditing(false);
-                }}
-              >
-                <td className="p-4">
-                  <div className="font-semibold text-gray-900">{tx.from || tx.to}</div>
-                  <div className="text-xs text-gray-500">{tx.accountNumber}</div>
-                </td>
-                <td className="p-4">
-                  <span className="flex items-center gap-2">
-                    {tx.type === "Deposit" ? (
-                      <ArrowDownLeft className="text-green-600 w-4 h-4" />
-                    ) : (
-                      <ArrowUpRight className="text-red-500 w-4 h-4" />
-                    )}
-                    {tx.type}
-                  </span>
-                </td>
-                <td className={`p-4 font-bold ${tx.type === "Debit" ? "text-red-600" : "text-green-600"}`}>
-                   {tx.amount?.toLocaleString()} {tx.currency || "USD"}
-                </td>
-                <td className="p-4">
-                  <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${getStatusStyle(tx.status)}`}>
-                    {tx.status}
-                  </span>
-                </td>
-                <td className="p-4 text-gray-500">
-                  {tx.timestamp?.toDate ? tx.timestamp.toDate().toLocaleDateString() : "—"}
-                </td>
-              </tr>
-            ))}
+            {currentItems.map((tx) => {
+              const positive = isMoneyIn(tx.type);
+              return (
+                <tr
+                  key={tx.id}
+                  className="hover:bg-green-50/40 transition-colors cursor-pointer group"
+                  onClick={() => {
+                    setSelectedTx(tx);
+                    setEditData({
+                      ...tx,
+                      timestamp: tx.timestamp?.toDate
+                        ? tx.timestamp.toDate().toISOString().slice(0, 16)
+                        : "",
+                    });
+                    setIsEditing(false);
+                  }}
+                >
+                  <td className="p-4">
+                    <div className="font-semibold text-gray-900">{tx.from || tx.to}</div>
+                    <div className="text-xs text-gray-500">{tx.accountNumber}</div>
+                  </td>
+                  <td className="p-4">
+                    <span className="flex items-center gap-2">
+                      {positive ? (
+                        <ArrowDownLeft className="text-green-600 w-4 h-4" />
+                      ) : (
+                        <ArrowUpRight className="text-red-500 w-4 h-4" />
+                      )}
+                      {tx.type}
+                    </span>
+                  </td>
+                  <td className={`p-4 font-bold ${positive ? "text-green-600" : "text-red-600"}`}>
+                     {positive ? "+" : "-"}{tx.amount?.toLocaleString()} {tx.currency || "USD"}
+                  </td>
+                  <td className="p-4">
+                    <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${getStatusStyle(tx.status)}`}>
+                      {tx.status}
+                    </span>
+                  </td>
+                  <td className="p-4 text-gray-500">
+                    {tx.timestamp?.toDate ? tx.timestamp.toDate().toLocaleDateString() : "—"}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -348,7 +359,6 @@ export default function AdminTransactions() {
               </div>
 
               <form onSubmit={handleCreate} className="p-6 space-y-4">
-                {/* SELECT USER FROM FIREBASE USERS COLLECTION */}
                 <div>
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Select User</label>
                   <select
@@ -373,7 +383,7 @@ export default function AdminTransactions() {
                       type="text"
                       readOnly
                       value={addData.to}
-                      placeholder="Auto-filled from user selection"
+                      placeholder="Auto-filled"
                       className="w-full mt-1 border border-gray-200 p-3 rounded-xl bg-gray-50 text-sm outline-none text-gray-600"
                     />
                   </div>
@@ -393,7 +403,7 @@ export default function AdminTransactions() {
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Sender / Source (From)</label>
                   <input
                     type="text"
-                    placeholder="e.g. System / Bank Wire / External Source"
+                    placeholder="e.g. System / External Bank"
                     value={addData.from}
                     onChange={(e) => setAddData({ ...addData, from: e.target.value })}
                     className="w-full mt-1 border border-gray-200 p-3 rounded-xl outline-none focus:ring-2 focus:ring-green-500 text-sm"
@@ -433,7 +443,8 @@ export default function AdminTransactions() {
                     >
                       <option value="Deposit">Deposit</option>
                       <option value="Debit">Debit</option>
-                      <option value="Transfer">Transfer</option>
+                      <option value="Incoming Transfer">Incoming Transfer</option>
+                      <option value="Outgoing Transfer">Outgoing Transfer</option>
                     </select>
                   </div>
                   <div>
@@ -464,7 +475,7 @@ export default function AdminTransactions() {
                   <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Note / Description</label>
                   <input
                     type="text"
-                    placeholder="Optional transaction remarks"
+                    placeholder="Optional remarks"
                     value={addData.note}
                     onChange={(e) => setAddData({ ...addData, note: e.target.value })}
                     className="w-full mt-1 border border-gray-200 p-3 rounded-xl outline-none focus:ring-2 focus:ring-green-500 text-sm"
@@ -544,7 +555,8 @@ export default function AdminTransactions() {
                     >
                       <option value="Deposit">Deposit</option>
                       <option value="Debit">Debit</option>
-                      <option value="Transfer">Transfer</option>
+                      <option value="Incoming Transfer">Incoming Transfer</option>
+                      <option value="Outgoing Transfer">Outgoing Transfer</option>
                     </select>
                   </div>
                   <div>
